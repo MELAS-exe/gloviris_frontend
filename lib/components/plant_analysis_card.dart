@@ -114,7 +114,7 @@ class PlantAnalysisCard extends StatelessWidget {
                       // Navigator.push(
                       //   context,
                       //   MaterialPageRoute(
-                      //     builder: (context) => FieldDetailScreen(soilData: soilData),
+                      //     builder: (context) => ,
                       //   ),
                       // );
                     },

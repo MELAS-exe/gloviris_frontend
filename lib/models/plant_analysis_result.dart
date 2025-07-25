@@ -1,5 +1,5 @@
-// Extension to your existing PlantAnalysisResult class
-// This adds database integration features without changing the original class
+// lib/models/plant_analysis_result.dart
+// Fixed version to handle type casting issues
 
 import '../services/plant_ai_service.dart';
 
@@ -12,7 +12,7 @@ class PlantAnalysisResult {
   final DateTime analyzedAt;
   final bool isHealthy;
 
-  // New fields for database integration (optional)
+  // Enhanced fields for database integration (optional)
   final double? confidence;
   final Map<String, dynamic>? matchedPlant;
   final List<Map<String, dynamic>>? compatibleSoils;
@@ -36,29 +36,126 @@ class PlantAnalysisResult {
     this.hasDatabase = false,
   });
 
-  // Updated factory method that handles both basic and enhanced data
-  factory PlantAnalysisResult.fromJson(Map<String, dynamic> json, String imagePath) {
-    final status = json['status'] ?? '';
-    final isHealthy = status.contains('✅') || status.toLowerCase().contains('sain');
+  // FIXED: Updated factory method with proper type casting
+  factory PlantAnalysisResult.fromJson(dynamic jsonData, String imagePath) {
+    // Handle both Map<String, dynamic> and Map<dynamic, dynamic>
+    Map<String, dynamic> json;
+
+    if (jsonData is Map<String, dynamic>) {
+      json = jsonData;
+    } else if (jsonData is Map) {
+      // Convert Map<dynamic, dynamic> to Map<String, dynamic>
+      json = Map<String, dynamic>.from(jsonData);
+    } else {
+      // Fallback for other types
+      json = {};
+    }
+
+    final status = json['status']?.toString() ?? '';
+    final isHealthy = status.contains('✅') ||
+        status.toLowerCase().contains('sain') ||
+        status.toLowerCase().contains('healthy');
+
+    // Safe type conversion for lists
+    List<Map<String, dynamic>>? compatibleSoils;
+    if (json['compatibleSoils'] != null) {
+      try {
+        final soilsData = json['compatibleSoils'];
+        if (soilsData is List) {
+          compatibleSoils = soilsData.map((item) {
+            if (item is Map<String, dynamic>) {
+              return item;
+            } else if (item is Map) {
+              return Map<String, dynamic>.from(item);
+            } else {
+              return <String, dynamic>{};
+            }
+          }).toList();
+        }
+      } catch (e) {
+        print('Error parsing compatible soils: $e');
+        compatibleSoils = null;
+      }
+    }
+
+    // Safe type conversion for matched plant
+    Map<String, dynamic>? matchedPlant;
+    if (json['matchedPlant'] != null) {
+      try {
+        final plantData = json['matchedPlant'];
+        if (plantData is Map<String, dynamic>) {
+          matchedPlant = plantData;
+        } else if (plantData is Map) {
+          matchedPlant = Map<String, dynamic>.from(plantData);
+        }
+      } catch (e) {
+        print('Error parsing matched plant: $e');
+        matchedPlant = null;
+      }
+    }
+
+    // Safe type conversion for saved result
+    Map<String, dynamic>? savedResult;
+    if (json['savedResult'] != null) {
+      try {
+        final resultData = json['savedResult'];
+        if (resultData is Map<String, dynamic>) {
+          savedResult = resultData;
+        } else if (resultData is Map) {
+          savedResult = Map<String, dynamic>.from(resultData);
+        }
+      } catch (e) {
+        print('Error parsing saved result: $e');
+        savedResult = null;
+      }
+    }
 
     return PlantAnalysisResult(
-      className: json['class'] ?? 'Unknown',
+      className: json['class']?.toString() ?? 'Unknown',
       status: status,
-      species: json['espece'] ?? 'Unknown',
-      disease: json['maladie'] ?? 'Unknown',
+      species: json['espece']?.toString() ?? 'Unknown',
+      disease: json['maladie']?.toString() ?? 'Unknown',
       imagePath: imagePath,
       analyzedAt: DateTime.now(),
       isHealthy: isHealthy,
-      // Enhanced fields
-      confidence: (json['confidence'] ?? 0.9).toDouble(),
-      matchedPlant: json['matchedPlant'],
-      compatibleSoils: json['compatibleSoils'] != null
-          ? List<Map<String, dynamic>>.from(json['compatibleSoils'])
-          : null,
-      userId: json['savedResult']?['user_id'],
-      analysisId: json['savedResult']?['id'],
-      hasDatabase: json['isConnectedToDatabase'] ?? false,
+      // Enhanced fields with safe casting
+      confidence: _safeToDouble(json['confidence'], 0.9),
+      matchedPlant: matchedPlant,
+      compatibleSoils: compatibleSoils,
+      userId: savedResult?['user_id']?.toString(),
+      analysisId: _safeToInt(savedResult?['id']),
+      hasDatabase: json['isConnectedToDatabase'] == true,
     );
+  }
+
+  // Helper method for safe double conversion
+  static double _safeToDouble(dynamic value, double defaultValue) {
+    if (value == null) return defaultValue;
+    if (value is double) return value;
+    if (value is int) return value.toDouble();
+    if (value is String) {
+      try {
+        return double.parse(value);
+      } catch (e) {
+        return defaultValue;
+      }
+    }
+    return defaultValue;
+  }
+
+  // Helper method for safe int conversion
+  static int? _safeToInt(dynamic value) {
+    if (value == null) return null;
+    if (value is int) return value;
+    if (value is double) return value.toInt();
+    if (value is String) {
+      try {
+        return int.parse(value);
+      } catch (e) {
+        return null;
+      }
+    }
+    return null;
   }
 
   Map<String, dynamic> toJson() {
@@ -101,12 +198,12 @@ class PlantAnalysisResult {
   // Get compatible soils for this plant species
   List<String> get compatibleSoilNames {
     if (compatibleSoils == null) return [];
-    return compatibleSoils!.map((soil) => soil['name'].toString()).toList();
+    return compatibleSoils!.map((soil) => soil['name']?.toString() ?? 'Unknown').toList();
   }
 
   // Get plant care information from database
   String? get plantCareInfo {
-    return matchedPlant?['description'];
+    return matchedPlant?['description']?.toString();
   }
 
   // Get severity level

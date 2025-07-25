@@ -1,3 +1,7 @@
+// lib/components/phone_camera_card.dart
+// Fixed version to handle image processing and API calls properly
+
+import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
 import '../screens/PlantCameraScreen.dart';
@@ -25,61 +29,211 @@ class PhoneCameraCard extends StatelessWidget {
       final XFile? image = await picker.pickImage(
         source: ImageSource.gallery,
         imageQuality: 85,
+        maxWidth: 1024,
+        maxHeight: 1024,
       );
 
-      if (image != null) {
+      if (image != null && context.mounted) {
+        // Verify file exists and is readable
+        final File imageFile = File(image.path);
+        if (!await imageFile.exists()) {
+          if (context.mounted) {
+            _showErrorDialog(context, 'Fichier image non trouvé');
+          }
+          return;
+        }
+
+        // Check file size (limit to 10MB)
+        final int fileSizeInBytes = await imageFile.length();
+        if (fileSizeInBytes > 10 * 1024 * 1024) {
+          if (context.mounted) {
+            _showErrorDialog(context, 'Image trop grande. Limite: 10MB');
+          }
+          return;
+        }
+
         // Show loading dialog
-        showDialog(
-          context: context,
-          barrierDismissible: false,
-          builder: (BuildContext context) {
-            return const AlertDialog(
-              content: Row(
-                children: [
-                  CircularProgressIndicator(),
-                  SizedBox(width: 20),
-                  Text('Analyse en cours...'),
-                ],
-              ),
-            );
-          },
-        );
+        _showLoadingDialog(context, 'Préparation de l\'image...');
 
         try {
           // Analyze the selected image
           final result = await PlantApiService.analyzePlantImage(image.path);
 
           // Close loading dialog
-          Navigator.of(context).pop();
+          if (context.mounted) {
+            Navigator.of(context).pop();
+          }
 
-          if (result['success'] == true) {
-            // Success - navigate to results screen
-            final analysisResult = PlantAnalysisResult.fromJson(
-                result['data'],
-                image.path
-            );
+          if (context.mounted) {
+            if (result['success'] == true) {
+              // Success - navigate to results screen
+              try {
+                final analysisResult = PlantAnalysisResult.fromJson(
+                    result['data'] ?? result,
+                    image.path
+                );
 
-            Navigator.push(
-              context,
-              MaterialPageRoute(
-                builder: (context) => PlantResultScreen(
-                  analysisResult: analysisResult,
-                ),
-              ),
-            );
-          } else {
-            // Handle API failure
-            _showErrorDialog(context, 'Échec de l\'analyse. Vérifiez votre connexion.');
+                Navigator.push(
+                  context,
+                  MaterialPageRoute(
+                    builder: (context) => PlantResultScreen(
+                      analysisResult: analysisResult,
+                    ),
+                  ),
+                );
+              } catch (e) {
+                print('Error creating analysis result: $e');
+                _showErrorDialog(context, 'Erreur lors du traitement des résultats: $e');
+              }
+            } else {
+              // Handle API failure
+              _showApiFailureDialog(context, result, image.path);
+            }
           }
         } catch (e) {
           // Close loading dialog
-          Navigator.of(context).pop();
-          _showErrorDialog(context, 'Erreur lors de l\'analyse: $e');
+          if (context.mounted) {
+            Navigator.of(context).pop();
+            _showErrorDialog(context, 'Erreur lors de l\'analyse: $e');
+          }
         }
       }
     } catch (e) {
-      _showErrorDialog(context, 'Erreur lors de la sélection d\'image: $e');
+      if (context.mounted) {
+        _showErrorDialog(context, 'Erreur lors de la sélection d\'image: $e');
+      }
     }
+  }
+
+  void _showLoadingDialog(BuildContext context, String message) {
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (BuildContext context) {
+        return WillPopScope(
+          onWillPop: () async => false, // Prevent back button
+          child: AlertDialog(
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(20),
+            ),
+            content: Padding(
+              padding: const EdgeInsets.all(20),
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  const CircularProgressIndicator(
+                    color: AppTheme.primaryYellow,
+                  ),
+                  const SizedBox(width: 20),
+                  Expanded(
+                    child: Text(
+                      message,
+                      style: const TextStyle(fontSize: 16),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        );
+      },
+    );
+  }
+
+  void _showApiFailureDialog(BuildContext context, Map<String, dynamic> result, String imagePath) {
+    showDialog(
+      context: context,
+      builder: (BuildContext context) {
+        return AlertDialog(
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(20),
+          ),
+          title: const Row(
+            children: [
+              Icon(Icons.warning, color: Colors.orange),
+              SizedBox(width: 8),
+              Text('Analyse échouée'),
+            ],
+          ),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(result['error']?.toString() ?? 'Erreur inconnue'),
+              const SizedBox(height: 16),
+
+              // Show mock data if available
+              if (result['mock_data'] != null) ...[
+                Container(
+                  padding: const EdgeInsets.all(12),
+                  decoration: BoxDecoration(
+                    color: Colors.grey.withOpacity(0.1),
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      const Text('Données de test disponibles:',
+                          style: TextStyle(fontWeight: FontWeight.bold)),
+                      const SizedBox(height: 8),
+                      Text('Espèce: ${result['mock_data']['espece'] ?? 'N/A'}'),
+                      Text('État: ${result['mock_data']['status'] ?? 'N/A'}'),
+                      Text('Diagnostic: ${result['mock_data']['maladie'] ?? 'N/A'}'),
+                    ],
+                  ),
+                ),
+                const SizedBox(height: 12),
+              ],
+
+              const Text(
+                'Vérifiez que le serveur est démarré et accessible.',
+                style: TextStyle(fontSize: 12, color: Colors.grey),
+              ),
+            ],
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(context).pop(),
+              child: const Text(
+                'Fermer',
+                style: TextStyle(color: Colors.grey),
+              ),
+            ),
+            if (result['mock_data'] != null)
+              TextButton(
+                onPressed: () {
+                  Navigator.of(context).pop();
+                  try {
+                    // Show mock data results
+                    final mockResult = PlantAnalysisResult.fromJson(
+                      result['mock_data'],
+                      imagePath,
+                    );
+                    Navigator.push(
+                      context,
+                      MaterialPageRoute(
+                        builder: (context) => PlantResultScreen(
+                          analysisResult: mockResult,
+                          isMockData: true,
+                        ),
+                      ),
+                    );
+                  } catch (e) {
+                    _showErrorDialog(context, 'Erreur avec les données de test: $e');
+                  }
+                },
+                child: const Text(
+                  'Voir test',
+                  style: TextStyle(
+                    color: AppTheme.primaryYellow,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+              ),
+          ],
+        );
+      },
+    );
   }
 
   void _showErrorDialog(BuildContext context, String message) {
@@ -104,7 +258,7 @@ class PhoneCameraCard extends StatelessWidget {
               child: const Text(
                 'OK',
                 style: TextStyle(
-                  color: Colors.orange,
+                  color: AppTheme.primaryYellow,
                   fontWeight: FontWeight.w600,
                 ),
               ),

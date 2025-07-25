@@ -1,8 +1,12 @@
+// lib/screens/soil_screen.dart
+// Updated to fetch data from database
+
 import 'package:flutter/material.dart';
 import '../components/device_connection_card.dart';
 import '../components/soil_analysis_card.dart';
 import '../components/search_bar.dart';
 import '../models/soil_data.dart';
+import '../services/CrudService.dart';
 import '../theme/app_theme.dart';
 
 class SoilScreen extends StatefulWidget {
@@ -13,103 +17,86 @@ class SoilScreen extends StatefulWidget {
 }
 
 class _SoilScreenState extends State<SoilScreen> {
-  final List<SoilData> soilCards = [
-    SoilData(
-      title: "Field Title",
-      soilType: "Clay",
-      soilImage: "https://images.unsplash.com/photo-1597048107223-c1543c71360c?q=80&w=2940&auto=format&fit=crop&ixlib=rb-4.0.3&ixid=M3wxMjA3fDB8MHxwaG90by1wYWdlfHx8fGVufDB8fHx8fA%3D%3D",
-      soilIcon: "assets/images/clay_icon.png",
-      crops: [
-        CropData(icon: "assets/images/corn.png", name: "Corn"),
-        CropData(icon: "assets/images/radish.png", name: "Radish"),
-        CropData(icon: "assets/images/cauliflower.png", name: "Cauliflower"),
-      ],
-    ),
-    SoilData(
-      title: "Garden Plot A",
-      soilType: "Loam",
-      soilImage: "https://images.unsplash.com/photo-1542601900-7924d5763955?q=80&w=2940&auto=format&fit=crop&ixlib=rb-4.0.3&ixid=M3wxMjA3fDB8MHxwaG90by1wYWdlfHx8fGVufDB8fHx8fA%3D%3D",
-      soilIcon: "assets/images/clay_icon.png",
-      crops: [
-        CropData(icon: "assets/images/corn.png", name: "Corn"),
-        CropData(icon: "assets/images/radish.png", name: "Radish"),
-      ],
-    ),
-    SoilData(
-      title: "Greenhouse Bed 1",
-      soilType: "Sandy",
-      soilImage: "https://images.unsplash.com/photo-1601134799703-980b188c0397?q=80&w=2940&auto=format&fit=crop&ixlib=rb-4.0.3&ixid=M3wxMjA3fDB8MHxwaG90by1wYWdlfHx8fGVufDB8fHx8fA%3D%3D",
-      soilIcon: "assets/images/clay_icon.png",
-      crops: [
-        CropData(icon: "assets/images/cauliflower.png", name: "Cauliflower"),
-      ],
-    ),
-    SoilData(
-      title: "Backyard Section",
-      soilType: "Clay",
-      soilImage: "https://images.unsplash.com/photo-1523348837708-15d4a09cfac2?q=80&w=2940&auto=format&fit=crop&ixlib=rb-4.0.3&ixid=M3wxMjA3fDB8MHxwaG90by1wYWdlfHx8fGVufDB8fHx8fA%3D%3D",
-      soilIcon: "assets/images/clay_icon.png",
-      crops: [
-        CropData(icon: "assets/images/corn.png", name: "Corn"),
-        CropData(icon: "assets/images/radish.png", name: "Radish"),
-        CropData(icon: "assets/images/cauliflower.png", name: "Cauliflower"),
-      ],
-    ),
-    SoilData(
-      title: "Front Yard Plot",
-      soilType: "Loam",
-      soilImage: "https://images.unsplash.com/photo-1509315811345-672d83ef2fbc?q=80&w=2864&auto=format&fit=crop&ixlib=rb-4.0.3&ixid=M3wxMjA3fDB8MHxwaG90by1wYWdlfHx8fGVufDB8fHx8fA%3D%3D",
-      soilIcon: "assets/images/clay_icon.png",
-      crops: [
-        CropData(icon: "assets/images/radish.png", name: "Radish"),
-        CropData(icon: "assets/images/cauliflower.png", name: "Cauliflower"),
-      ],
-    ),
-    SoilData(
-      title: "Side Garden",
-      soilType: "Sandy",
-      soilImage: "https://images.unsplash.com/photo-1571503335010-4a8f79287612?q=80&w=2942&auto=format&fit=crop&ixlib=rb-4.0.3&ixid=M3wxMjA3fDB8MHxwaG90by1wYWdlfHx8fGVufDB8fHx8fA%3D%3D",
-      soilIcon: "assets/images/clay_icon.png",
-      crops: [
-        CropData(icon: "assets/images/corn.png", name: "Corn"),
-      ],
-    ),
-  ];
+  List<SoilData> soilCards = [];
+  bool isLoading = true;
+  bool hasError = false;
+  String errorMessage = '';
+  bool isConnected = false;
 
+  @override
+  void initState() {
+    super.initState();
+    _loadSoilData();
+  }
 
+  Future<void> _loadSoilData() async {
+    setState(() {
+      isLoading = true;
+      hasError = false;
+    });
+
+    try {
+      // Check connection status
+      isConnected = await CrudService.checkConnection();
+
+      // Fetch soil data from database
+      final soils = await CrudService.getAllSoils();
+
+      setState(() {
+        soilCards = soils;
+        isLoading = false;
+        hasError = false;
+      });
+    } catch (e) {
+      setState(() {
+        isLoading = false;
+        hasError = true;
+        errorMessage = e.toString();
+      });
+    }
+  }
+
+  Future<void> _refreshData() async {
+    await _loadSoilData();
+  }
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
       body: SafeArea(
-        child: SingleChildScrollView(
-          child: Column(
-            children: [
-              // Fixed header section
-              Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 20),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    const SizedBox(height: 20),
-                    _buildHeader(),
-                    const SizedBox(height: 40),
-                    const DeviceConnectionCard(),
-                    const SizedBox(height: 40),
-                    const CustomSearchBar(),
-                    const SizedBox(height: 20),
-                  ],
-                ),
-              ),
-              // Scrollable soil analysis section
-              Container(
-                height: MediaQuery.of(context).size.height/1.5,
-                child: Padding(
+        child: RefreshIndicator(
+          onRefresh: _refreshData,
+          color: AppTheme.primaryYellow,
+          child: SingleChildScrollView(
+            physics: const AlwaysScrollableScrollPhysics(),
+            child: Column(
+              children: [
+                // Fixed header section
+                Padding(
                   padding: const EdgeInsets.symmetric(horizontal: 20),
-                  child: _buildScrollableSoilAnalysisSection(),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      const SizedBox(height: 20),
+                      _buildHeader(),
+                      const SizedBox(height: 40),
+                      const DeviceConnectionCard(),
+                      const SizedBox(height: 40),
+                      const CustomSearchBar(),
+                      const SizedBox(height: 20),
+                    ],
+                  ),
                 ),
-              ),
-            ],
+                // Scrollable soil analysis section
+                Container(
+                  height: MediaQuery.of(context).size.height / 1.5,
+                  child: Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 20),
+                    child: _buildScrollableSoilAnalysisSection(),
+                  ),
+                ),
+              ],
+            ),
           ),
         ),
       ),
@@ -122,15 +109,43 @@ class _SoilScreenState extends State<SoilScreen> {
         Container(
           width: 60,
           height: 60,
-          child: Image.asset("assets/images/logo.png")
+          child: Image.asset("assets/images/logo.png"),
         ),
         const SizedBox(width: 10),
-        Text(
-          'GlovIris',
-          style: Theme.of(context).textTheme.headlineSmall?.copyWith(
-                fontWeight: FontWeight.w600,
-                color: AppTheme.textPrimary,
+        Expanded(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                'GlovIris',
+                style: Theme.of(context).textTheme.headlineSmall?.copyWith(
+                  fontWeight: FontWeight.w600,
+                  color: AppTheme.textPrimary,
+                ),
               ),
+              Row(
+                children: [
+                  Container(
+                    width: 8,
+                    height: 8,
+                    decoration: BoxDecoration(
+                      color: isConnected ? Colors.green : Colors.red,
+                      shape: BoxShape.circle,
+                    ),
+                  ),
+                  const SizedBox(width: 6),
+                  Text(
+                    isConnected ? 'Base de données connectée' : 'Mode hors ligne',
+                    style: TextStyle(
+                      fontSize: 12,
+                      color: isConnected ? Colors.green : Colors.red,
+                      fontWeight: FontWeight.w500,
+                    ),
+                  ),
+                ],
+              ),
+            ],
+          ),
         ),
       ],
     );
@@ -146,20 +161,34 @@ class _SoilScreenState extends State<SoilScreen> {
             child: Row(
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
-                Text(
-                  'Soils analyzed',
-                  style: Theme.of(context).textTheme.headlineSmall?.copyWith(
+                Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      'Sols analysés',
+                      style: Theme.of(context).textTheme.headlineSmall?.copyWith(
                         fontWeight: FontWeight.w600,
                         color: AppTheme.textPrimary,
                       ),
+                    ),
+                    if (!isConnected)
+                      const Text(
+                        'Données locales',
+                        style: TextStyle(
+                          fontSize: 12,
+                          color: Colors.orange,
+                          fontStyle: FontStyle.italic,
+                        ),
+                      ),
+                  ],
                 ),
                 Row(
                   children: [
                     Text(
                       'Filter',
                       style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                            color: AppTheme.textSecondary,
-                          ),
+                        color: AppTheme.textSecondary,
+                      ),
                     ),
                     const SizedBox(width: 8),
                     Container(
@@ -181,19 +210,135 @@ class _SoilScreenState extends State<SoilScreen> {
             ),
           ),
           const SizedBox(height: 20),
-          // Scrollable list of soil cards
+          // Content area
           Expanded(
-            child: ListView.separated(
-              padding: const EdgeInsets.fromLTRB(20, 0, 20, 20),
-              itemCount: soilCards.length,
-              separatorBuilder: (context, index) => const SizedBox(height: 20),
-              itemBuilder: (context, index) {
-                return SoilAnalysisCard(soilData: soilCards[index]);
-              },
-            ),
+            child: _buildContent(),
           ),
         ],
       ),
+    );
+  }
+
+  Widget _buildContent() {
+    if (isLoading) {
+      return const Center(
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            CircularProgressIndicator(
+              color: AppTheme.primaryYellow,
+            ),
+            SizedBox(height: 16),
+            Text(
+              'Chargement des données...',
+              style: TextStyle(
+                color: AppTheme.textSecondary,
+                fontSize: 16,
+              ),
+            ),
+          ],
+        ),
+      );
+    }
+
+    if (hasError) {
+      return Center(
+        child: Padding(
+          padding: const EdgeInsets.all(20),
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              Icon(
+                Icons.error_outline,
+                size: 64,
+                color: Colors.red.withOpacity(0.7),
+              ),
+              const SizedBox(height: 16),
+              const Text(
+                'Erreur de chargement',
+                style: TextStyle(
+                  fontSize: 18,
+                  fontWeight: FontWeight.w600,
+                  color: AppTheme.textPrimary,
+                ),
+              ),
+              const SizedBox(height: 8),
+              Text(
+                errorMessage,
+                textAlign: TextAlign.center,
+                style: const TextStyle(
+                  color: AppTheme.textSecondary,
+                  fontSize: 14,
+                ),
+              ),
+              const SizedBox(height: 16),
+              ElevatedButton(
+                onPressed: _refreshData,
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: AppTheme.primaryYellow,
+                  foregroundColor: AppTheme.textPrimary,
+                ),
+                child: const Text('Réessayer'),
+              ),
+            ],
+          ),
+        ),
+      );
+    }
+
+    if (soilCards.isEmpty) {
+      return Center(
+        child: Padding(
+          padding: const EdgeInsets.all(20),
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              Icon(
+                Icons.terrain,
+                size: 64,
+                color: AppTheme.textSecondary.withOpacity(0.5),
+              ),
+              const SizedBox(height: 16),
+              const Text(
+                'Aucun sol analysé',
+                style: TextStyle(
+                  fontSize: 18,
+                  fontWeight: FontWeight.w600,
+                  color: AppTheme.textSecondary,
+                ),
+              ),
+              const SizedBox(height: 8),
+              const Text(
+                'Commencez par analyser votre sol avec l\'appareil de mesure.',
+                textAlign: TextAlign.center,
+                style: TextStyle(
+                  color: AppTheme.textSecondary,
+                  fontSize: 14,
+                ),
+              ),
+              const SizedBox(height: 16),
+              ElevatedButton(
+                onPressed: _refreshData,
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: AppTheme.primaryGreen,
+                  foregroundColor: Colors.white,
+                ),
+                child: const Text('Actualiser'),
+              ),
+            ],
+          ),
+        ),
+      );
+    }
+
+    // Display soil cards
+    return ListView.separated(
+      padding: const EdgeInsets.fromLTRB(20, 0, 20, 20),
+      itemCount: soilCards.length,
+      separatorBuilder: (context, index) => const SizedBox(height: 20),
+      itemBuilder: (context, index) {
+        return SoilAnalysisCard(soilData: soilCards[index]);
+      },
     );
   }
 }
