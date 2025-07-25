@@ -1,63 +1,45 @@
-// This is an enhanced version of your existing camera_screen.dart
-// Uncomment this file and replace your existing camera_screen.dart
-
 import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:camera/camera.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:path/path.dart' as path;
 import '../components/loading_overlay.dart';
-import '../services/main_backend_service.dart';
-import '../models/plant_analysis_result.dart'; // Using your existing model
+import '../models/plant_analysis_result.dart';
 import '../services/plant_ai_service.dart';
-import 'PlantResultScreen.dart'; // Using your existing result screen
+import 'PlantResultScreen.dart';
 
-class CameraScreen extends StatefulWidget {
-  const CameraScreen({super.key});
+class PlantCameraScreen extends StatefulWidget {
+  const PlantCameraScreen({super.key});
 
   @override
-  State<CameraScreen> createState() => _CameraScreenState();
+  State<PlantCameraScreen> createState() => _PlantCameraScreenState();
 }
 
-class _CameraScreenState extends State<CameraScreen> {
+class _PlantCameraScreenState extends State<PlantCameraScreen> {
   CameraController? _controller;
   List<CameraDescription>? _cameras;
   bool _isInitialized = false;
   bool _isLoading = false;
   String? _capturedImagePath;
   bool _showPreview = false;
-  bool _mainBackendConnected = false;
-  bool _plantAiConnected = false;
-  String _loadingMessage = 'Initialisation...';
+  bool _backendConnected = false;
 
   @override
   void initState() {
     super.initState();
     _initializeCamera();
-    _checkBackendConnections();
+    _checkBackendConnection();
   }
 
-  Future<void> _checkBackendConnections() async {
+  Future<void> _checkBackendConnection() async {
+    final connected = await PlantApiService.checkBackendConnection();
     setState(() {
-      _loadingMessage = 'Vérification des connexions...';
-    });
-
-    // Check main backend connection
-    final mainConnected = await MainBackendService.checkMainBackendConnection();
-    final aiConnected = await MainBackendService.checkPlantAiConnection();
-
-    setState(() {
-      _mainBackendConnected = mainConnected;
-      _plantAiConnected = aiConnected;
+      _backendConnected = connected;
     });
   }
 
   Future<void> _initializeCamera() async {
     try {
-      setState(() {
-        _loadingMessage = 'Initialisation de la caméra...';
-      });
-
       _cameras = await availableCameras();
       if (_cameras!.isNotEmpty) {
         _controller = CameraController(
@@ -69,7 +51,6 @@ class _CameraScreenState extends State<CameraScreen> {
         if (mounted) {
           setState(() {
             _isInitialized = true;
-            _loadingMessage = 'Prêt à analyser!';
           });
         }
       }
@@ -85,7 +66,6 @@ class _CameraScreenState extends State<CameraScreen> {
     try {
       setState(() {
         _isLoading = true;
-        _loadingMessage = 'Capture de l\'image...';
       });
 
       final Directory appDir = await getApplicationDocumentsDirectory();
@@ -99,7 +79,6 @@ class _CameraScreenState extends State<CameraScreen> {
         _capturedImagePath = filePath;
         _showPreview = true;
         _isLoading = false;
-        _loadingMessage = 'Image capturée!';
       });
     } catch (e) {
       setState(() {
@@ -109,32 +88,15 @@ class _CameraScreenState extends State<CameraScreen> {
     }
   }
 
-  Future<void> _sendToBackend() async {
+  Future<void> _analyzePlant() async {
     if (_capturedImagePath == null) return;
 
     setState(() {
       _isLoading = true;
-      _loadingMessage = 'Analyse de la plante en cours...';
     });
 
     try {
-      Map<String, dynamic> result;
-
-      // Try enhanced analysis first (with database integration)
-      if (_mainBackendConnected || _plantAiConnected) {
-        setState(() {
-          _loadingMessage = 'Analyse IA avancée...';
-        });
-
-        result = await PlantApiService.analyzePlantImage(_capturedImagePath!);
-      } else {
-        // Fallback to basic analysis
-        setState(() {
-          _loadingMessage = 'Analyse de base...';
-        });
-
-        result = await PlantApiService.analyzeSoilImage(_capturedImagePath!);
-      }
+      final result = await PlantApiService.analyzePlantImage(_capturedImagePath!);
 
       if (mounted) {
         setState(() {
@@ -142,25 +104,23 @@ class _CameraScreenState extends State<CameraScreen> {
         });
 
         if (result['success'] == true) {
-          // Create PlantAnalysisResult using your existing model
+          // Success - navigate to results screen
           final analysisResult = PlantAnalysisResult.fromJson(
-              result['data'] ?? result,
-              _capturedImagePath!
+            result['data'],
+            _capturedImagePath!
           );
 
-          // Navigate to your existing result screen
           Navigator.pushReplacement(
             context,
             MaterialPageRoute(
               builder: (context) => PlantResultScreen(
                 analysisResult: analysisResult,
-                isMockData: false,
               ),
             ),
           );
         } else {
-          // Show enhanced failure dialog
-          _showAnalysisFailureDialog(result);
+          // Handle API failure with mock data
+          _showApiFailureDialog(result);
         }
       }
     } catch (e) {
@@ -171,7 +131,7 @@ class _CameraScreenState extends State<CameraScreen> {
     }
   }
 
-  void _showAnalysisFailureDialog(Map<String, dynamic> result) {
+  void _showApiFailureDialog(Map<String, dynamic> result) {
     showDialog(
       context: context,
       builder: (BuildContext context) {
@@ -179,49 +139,31 @@ class _CameraScreenState extends State<CameraScreen> {
           shape: RoundedRectangleBorder(
             borderRadius: BorderRadius.circular(20),
           ),
-          title: Row(
+          title: const Row(
             children: [
-              Icon(
-                _mainBackendConnected && _plantAiConnected
-                    ? Icons.warning
-                    : Icons.wifi_off,
-                color: Colors.orange,
-              ),
-              const SizedBox(width: 8),
-              const Text('Analyse échouée'),
+              Icon(Icons.warning, color: Colors.orange),
+              SizedBox(width: 8),
+              Text('Connexion API échouée'),
             ],
           ),
           content: Column(
             mainAxisSize: MainAxisSize.min,
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Text(result['error'] ?? 'Erreur inconnue'),
-              const SizedBox(height: 16),
-              Container(
-                padding: const EdgeInsets.all(12),
-                decoration: BoxDecoration(
-                  color: Colors.grey.withOpacity(0.1),
-                  borderRadius: BorderRadius.circular(8),
-                ),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    const Text('État des connexions:', style: TextStyle(fontWeight: FontWeight.bold)),
-                    const SizedBox(height: 8),
-                    _buildConnectionStatus('Base de données', _mainBackendConnected),
-                    _buildConnectionStatus('IA Plantes', _plantAiConnected),
-                    _buildConnectionStatus('Utilisateur', MainBackendService.isAuthenticated),
-                  ],
-                ),
-              ),
+              const Text('Impossible de se connecter au serveur d\'analyse.'),
+              const SizedBox(height: 12),
               if (result['mock_data'] != null) ...[
-                const SizedBox(height: 12),
-                const Text('Données de test disponibles:', style: TextStyle(fontWeight: FontWeight.bold)),
+                const Text('Données de test:', style: TextStyle(fontWeight: FontWeight.bold)),
                 const SizedBox(height: 8),
                 Text('Espèce: ${result['mock_data']['espece']}'),
                 Text('État: ${result['mock_data']['status']}'),
                 Text('Maladie: ${result['mock_data']['maladie']}'),
               ],
+              const SizedBox(height: 12),
+              const Text(
+                'Vérifiez que le serveur Django est démarré et accessible.',
+                style: TextStyle(fontSize: 12, color: Colors.grey),
+              ),
             ],
           ),
           actions: [
@@ -232,19 +174,11 @@ class _CameraScreenState extends State<CameraScreen> {
               },
               child: const Text('Reprendre photo'),
             ),
-            if (!MainBackendService.isAuthenticated)
-              TextButton(
-                onPressed: () {
-                  Navigator.of(context).pop();
-                  _showLoginPrompt();
-                },
-                child: const Text('Se connecter'),
-              ),
-            if (result['mock_data'] != null)
-              TextButton(
-                onPressed: () {
-                  Navigator.of(context).pop();
-                  // Show mock data results
+            TextButton(
+              onPressed: () {
+                Navigator.of(context).pop();
+                if (result['mock_data'] != null) {
+                  // Show mock data for development
                   final mockResult = PlantAnalysisResult.fromJson(
                     result['mock_data'],
                     _capturedImagePath!,
@@ -258,63 +192,9 @@ class _CameraScreenState extends State<CameraScreen> {
                       ),
                     ),
                   );
-                },
-                child: const Text('Voir test'),
-              ),
-          ],
-        );
-      },
-    );
-  }
-
-  Widget _buildConnectionStatus(String label, bool isConnected) {
-    return Padding(
-      padding: const EdgeInsets.only(bottom: 4),
-      child: Row(
-        children: [
-          Icon(
-            isConnected ? Icons.check_circle : Icons.error,
-            color: isConnected ? Colors.green : Colors.red,
-            size: 16,
-          ),
-          const SizedBox(width: 8),
-          Text('$label: ${isConnected ? "Connecté" : "Déconnecté"}'),
-        ],
-      ),
-    );
-  }
-
-  void _showLoginPrompt() {
-    showDialog(
-      context: context,
-      builder: (BuildContext context) {
-        return AlertDialog(
-          shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(20),
-          ),
-          title: const Text('Connexion recommandée'),
-          content: const Text(
-              'Connectez-vous pour:\n'
-                  '• Sauvegarder vos analyses\n'
-                  '• Accéder à la base de données complète\n'
-                  '• Obtenir des recommandations personnalisées\n'
-                  '• Consulter l\'historique de vos plantes'
-          ),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.of(context).pop(),
-              child: const Text('Plus tard'),
-            ),
-            ElevatedButton(
-              onPressed: () {
-                Navigator.of(context).pop();
-                // Navigate to login screen - you'll need to implement this
-                // Navigator.pushNamed(context, '/login');
-                ScaffoldMessenger.of(context).showSnackBar(
-                  const SnackBar(content: Text('Fonctionnalité de connexion à implémenter')),
-                );
+                }
               },
-              child: const Text('Se connecter'),
+              child: const Text('Voir test'),
             ),
           ],
         );
@@ -382,7 +262,7 @@ class _CameraScreenState extends State<CameraScreen> {
           else
             _buildLoadingView(),
 
-          // Top bar with back button and enhanced status
+          // Top bar with back button and connection status
           SafeArea(
             child: Padding(
               padding: const EdgeInsets.all(20.0),
@@ -403,15 +283,35 @@ class _CameraScreenState extends State<CameraScreen> {
                       ),
                     ),
                   ),
-                  // Enhanced connection indicators
-                  Column(
-                    children: [
-                      _buildConnectionIndicator('DB', _mainBackendConnected),
-                      const SizedBox(height: 4),
-                      _buildConnectionIndicator('IA', _plantAiConnected),
-                      const SizedBox(height: 4),
-                      _buildConnectionIndicator('👤', MainBackendService.isAuthenticated),
-                    ],
+                  // Connection status indicator
+                  Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                    decoration: BoxDecoration(
+                      color: Colors.black.withOpacity(0.5),
+                      borderRadius: BorderRadius.circular(15),
+                    ),
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Container(
+                          width: 8,
+                          height: 8,
+                          decoration: BoxDecoration(
+                            color: _backendConnected ? Colors.green : Colors.red,
+                            shape: BoxShape.circle,
+                          ),
+                        ),
+                        const SizedBox(width: 8),
+                        Text(
+                          _backendConnected ? 'API OK' : 'API Off',
+                          style: const TextStyle(
+                            color: Colors.white,
+                            fontSize: 12,
+                            fontWeight: FontWeight.w500,
+                          ),
+                        ),
+                      ],
+                    ),
                   ),
                   if (!_showPreview)
                     Container(
@@ -456,40 +356,8 @@ class _CameraScreenState extends State<CameraScreen> {
             ),
           ),
 
-          // Loading overlay with enhanced message
-          if (_isLoading) LoadingOverlay(message: _loadingMessage),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildConnectionIndicator(String label, bool isConnected) {
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-      decoration: BoxDecoration(
-        color: Colors.black.withOpacity(0.5),
-        borderRadius: BorderRadius.circular(12),
-      ),
-      child: Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Container(
-            width: 6,
-            height: 6,
-            decoration: BoxDecoration(
-              color: isConnected ? Colors.green : Colors.red,
-              shape: BoxShape.circle,
-            ),
-          ),
-          const SizedBox(width: 4),
-          Text(
-            label,
-            style: const TextStyle(
-              color: Colors.white,
-              fontSize: 10,
-              fontWeight: FontWeight.w500,
-            ),
-          ),
+          // Loading overlay
+          if (_isLoading) const LoadingOverlay(message: 'Analyse de la plante en cours...'),
         ],
       ),
     );
@@ -515,22 +383,9 @@ class _CameraScreenState extends State<CameraScreen> {
   }
 
   Widget _buildLoadingView() {
-    return Center(
-      child: Column(
-        mainAxisAlignment: MainAxisAlignment.center,
-        children: [
-          const CircularProgressIndicator(
-            color: Colors.orange,
-          ),
-          const SizedBox(height: 16),
-          Text(
-            _loadingMessage,
-            style: const TextStyle(
-              color: Colors.white,
-              fontSize: 16,
-            ),
-          ),
-        ],
+    return const Center(
+      child: CircularProgressIndicator(
+        color: Colors.orange,
       ),
     );
   }
@@ -541,7 +396,7 @@ class _CameraScreenState extends State<CameraScreen> {
       children: [
         const SizedBox(width: 60), // Spacer
 
-        // Enhanced capture button
+        // Capture button
         GestureDetector(
           onTap: _takePicture,
           child: Container(
@@ -592,9 +447,9 @@ class _CameraScreenState extends State<CameraScreen> {
           ),
         ),
 
-        // Enhanced analyze button
+        // Analyze button
         ElevatedButton(
-          onPressed: _sendToBackend,
+          onPressed: _analyzePlant,
           style: ElevatedButton.styleFrom(
             backgroundColor: const Color(0xFFFFB03B),
             foregroundColor: Colors.black,
@@ -603,11 +458,9 @@ class _CameraScreenState extends State<CameraScreen> {
             ),
             padding: const EdgeInsets.symmetric(horizontal: 32, vertical: 12),
           ),
-          child: Text(
-            _mainBackendConnected || _plantAiConnected
-                ? 'Analyser IA+'
-                : 'Analyser',
-            style: const TextStyle(
+          child: const Text(
+            'Analyser la plante',
+            style: TextStyle(
               fontSize: 16,
               fontWeight: FontWeight.w600,
             ),

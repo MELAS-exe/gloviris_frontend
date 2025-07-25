@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:gloviris_app/screens/LoginScreen.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'screens/main_screen.dart';
 import 'theme/app_theme.dart';
@@ -15,7 +16,7 @@ class GlovIrisApp extends StatelessWidget {
     return MaterialApp(
       title: 'GlovIris',
       theme: AppTheme.lightTheme,
-      home: const MainScreen(),
+      home: const LoginScreen(),
       debugShowCheckedModeBanner: false,
     );
   }
