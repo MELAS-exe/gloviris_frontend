@@ -8,9 +8,9 @@ import '../models/plant_analysis_result.dart';
 
 class MainBackendService {
   // Main Django backend (spacehack2) - update with your actual IP
-  static const String mainBaseUrl = 'http://172.16.16.109:8000'; // Update this
+  static const String mainBaseUrl = 'http://172.16.16.198:8000'; // Update this
   // Plant AI backend - update with your actual IP
-  static const String plantAiBaseUrl = 'http://172.16.16.109:8001'; // Different port
+  static const String plantAiBaseUrl = 'http://172.16.16.198:8001'; // Different port
 
   static String? _accessToken;
   static String? _refreshToken;

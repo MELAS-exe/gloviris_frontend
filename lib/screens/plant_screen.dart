@@ -1,13 +1,13 @@
 // lib/screens/plant_screen.dart
-// Updated to fetch data from database
-
 import 'package:flutter/material.dart';
+import 'package:provider/provider.dart';
 import 'package:gloviris_app/components/phone_camera_card.dart';
 import '../components/plant_analysis_card.dart';
 import '../components/search_bar.dart';
 import '../models/plant_data.dart';
-import '../services/CrudService.dart';
 import '../theme/app_theme.dart';
+import '../view_models/AuthProvider.dart';
+import '../view_models/PlantAnalysisProvider.dart';
 
 class PlantScreen extends StatefulWidget {
   const PlantScreen({super.key});
@@ -17,130 +17,79 @@ class PlantScreen extends StatefulWidget {
 }
 
 class _PlantScreenState extends State<PlantScreen> {
-  List<PlantData> plantDataList = [];
-  bool isLoading = true;
-  bool hasError = false;
-  String errorMessage = '';
-  bool isConnected = false;
+  String _searchQuery = '';
+  String _selectedFilter = 'all'; // all, healthy, diseased
 
   @override
   void initState() {
     super.initState();
-    _loadPlantData();
-  }
-
-  Future<void> _loadPlantData() async {
-    setState(() {
-      isLoading = true;
-      hasError = false;
+    // Load data when screen initializes
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _loadData();
     });
-
-    try {
-      // Check connection status
-      isConnected = await CrudService.checkConnection();
-
-      // Try to fetch analysis history first (user's personal analyses)
-      List<PlantData> userAnalyses = [];
-      try {
-        final analysisHistory = await CrudService.getUserAnalysisHistory();
-        userAnalyses = analysisHistory.map((analysis) {
-          return PlantData(
-            analysis.imagePath,
-            analysis.species,
-            analysis.isHealthy ? "Healthy" : "Diseased",
-            analysis.disease,
-            _getStatusDescription(analysis.status),
-            analysis.recommendations.join('\n• '),
-          );
-        }).toList();
-      } catch (e) {
-        print('Could not fetch user analysis history: $e');
-      }
-
-      // Fetch general plant database
-      final plants = await CrudService.getAllPlants();
-
-      // Combine user analyses with general plant database
-      // Put user analyses first for better UX
-      final combinedList = <PlantData>[];
-      combinedList.addAll(userAnalyses);
-      combinedList.addAll(plants);
-
-      setState(() {
-        plantDataList = combinedList;
-        isLoading = false;
-        hasError = false;
-      });
-    } catch (e) {
-      setState(() {
-        isLoading = false;
-        hasError = true;
-        errorMessage = e.toString();
-      });
-    }
   }
 
-  String _getStatusDescription(String status) {
-    if (status.contains('✅')) {
-      return 'Plante en excellent état de santé. Continuez les soins actuels.';
-    } else if (status.contains('❌')) {
-      return 'Problème détecté sur la plante. Intervention recommandée.';
-    } else {
-      return 'État de la plante à surveiller. Vérifiez régulièrement.';
-    }
+  Future<void> _loadData() async {
+    final plantProvider = Provider.of<PlantAnalysisProvider>(context, listen: false);
+    await Future.wait([
+      plantProvider.loadAnalysisHistory(),
+      plantProvider.loadAllPlants(),
+    ]);
   }
 
   Future<void> _refreshData() async {
-    await _loadPlantData();
+    final plantProvider = Provider.of<PlantAnalysisProvider>(context, listen: false);
+    await plantProvider.refreshData();
   }
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
       body: SafeArea(
-        child: RefreshIndicator(
-          onRefresh: _refreshData,
-          color: AppTheme.primaryYellow,
-          child: SingleChildScrollView(
-            physics: const AlwaysScrollableScrollPhysics(),
-            child: Column(
-              children: [
-                // Fixed header section
-                Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: 20),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      const SizedBox(height: 20),
-                      _buildHeader(),
-                      const SizedBox(height: 40),
-                      const PhoneCameraCard(),
-                      const SizedBox(height: 40),
-                      const CustomSearchBar(),
-                      const SizedBox(height: 20),
-                    ],
-                  ),
+        child: Consumer2<PlantAnalysisProvider, AuthProvider>(
+          builder: (context, plantProvider, authProvider, child) {
+            return RefreshIndicator(
+              onRefresh: _refreshData,
+              color: AppTheme.primaryYellow,
+              child: SingleChildScrollView(
+                physics: const AlwaysScrollableScrollPhysics(),
+                child: Column(
+                  children: [
+                    // Fixed header section
+                    Padding(
+                      padding: const EdgeInsets.symmetric(horizontal: 20),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          const SizedBox(height: 20),
+                          _buildHeader(authProvider.isAuthenticated),
+                          const SizedBox(height: 40),
+                          const PhoneCameraCard(),
+                          const SizedBox(height: 40),
+                          _buildSearchBar(),
+                          const SizedBox(height: 20),
+                        ],
+                      ),
+                    ),
+                    // Scrollable plant analysis section
+                    Container(
+                      height: MediaQuery.of(context).size.height / 1.5,
+                      child: Padding(
+                        padding: const EdgeInsets.symmetric(horizontal: 20),
+                        child: _buildScrollablePlantAnalysisSection(plantProvider),
+                      ),
+                    ),
+                  ],
                 ),
-                // Scrollable plant analysis section
-                Container(
-                  height: MediaQuery
-                      .of(context)
-                      .size
-                      .height / 1.5,
-                  child: Padding(
-                    padding: const EdgeInsets.symmetric(horizontal: 20),
-                    child: _buildScrollablePlantAnalysisSection(),
-                  ),
-                ),
-              ],
-            ),
-          ),
+              ),
+            );
+          },
         ),
       ),
     );
   }
 
-  Widget _buildHeader() {
+  Widget _buildHeader(bool isAuthenticated) {
     return Row(
       children: [
         Container(
@@ -155,11 +104,7 @@ class _PlantScreenState extends State<PlantScreen> {
             children: [
               Text(
                 'GlovIris',
-                style: Theme
-                    .of(context)
-                    .textTheme
-                    .headlineSmall
-                    ?.copyWith(
+                style: Theme.of(context).textTheme.headlineSmall?.copyWith(
                   fontWeight: FontWeight.w600,
                   color: AppTheme.textPrimary,
                 ),
@@ -170,16 +115,16 @@ class _PlantScreenState extends State<PlantScreen> {
                     width: 8,
                     height: 8,
                     decoration: BoxDecoration(
-                      color: isConnected ? Colors.green : Colors.red,
+                      color: isAuthenticated ? Colors.green : Colors.orange,
                       shape: BoxShape.circle,
                     ),
                   ),
                   const SizedBox(width: 6),
                   Text(
-                    isConnected ? 'IA & Base connectées' : 'Mode hors ligne',
+                    isAuthenticated ? 'IA & Base connectées' : 'Mode hors ligne',
                     style: TextStyle(
                       fontSize: 12,
-                      color: isConnected ? Colors.green : Colors.red,
+                      color: isAuthenticated ? Colors.green : Colors.orange,
                       fontWeight: FontWeight.w500,
                     ),
                   ),
@@ -192,7 +137,47 @@ class _PlantScreenState extends State<PlantScreen> {
     );
   }
 
-  Widget _buildScrollablePlantAnalysisSection() {
+  Widget _buildSearchBar() {
+    return TextField(
+      onChanged: (value) {
+        setState(() {
+          _searchQuery = value;
+        });
+      },
+      decoration: InputDecoration(
+        hintText: 'Rechercher des plantes ou analyses...',
+        hintStyle: const TextStyle(
+          color: AppTheme.textSecondary,
+          fontSize: 16,
+        ),
+        prefixIcon: const Icon(
+          Icons.search,
+          color: AppTheme.textSecondary,
+          size: 30,
+        ),
+        border: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(30),
+          borderSide: const BorderSide(color: AppTheme.borderColor),
+        ),
+        enabledBorder: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(30),
+          borderSide: const BorderSide(color: AppTheme.borderColor),
+        ),
+        focusedBorder: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(30),
+          borderSide: const BorderSide(color: AppTheme.primaryYellow, width: 2),
+        ),
+        filled: true,
+        fillColor: AppTheme.cardBackground,
+        contentPadding: const EdgeInsets.symmetric(
+          horizontal: 20,
+          vertical: 20,
+        ),
+      ),
+    );
+  }
+
+  Widget _buildScrollablePlantAnalysisSection(PlantAnalysisProvider plantProvider) {
     return Card(
       child: Column(
         children: [
@@ -207,21 +192,17 @@ class _PlantScreenState extends State<PlantScreen> {
                   children: [
                     Text(
                       'Plantes analysées',
-                      style: Theme
-                          .of(context)
-                          .textTheme
-                          .headlineSmall
-                          ?.copyWith(
+                      style: Theme.of(context).textTheme.headlineSmall?.copyWith(
                         fontWeight: FontWeight.w600,
                         color: AppTheme.textPrimary,
                       ),
                     ),
-                    if (!isConnected)
-                      const Text(
-                        'Données locales disponibles',
-                        style: TextStyle(
+                    if (plantProvider.analysisHistory.isNotEmpty)
+                      Text(
+                        '${plantProvider.analysisHistory.length} analyses',
+                        style: const TextStyle(
                           fontSize: 12,
-                          color: Colors.orange,
+                          color: AppTheme.textSecondary,
                           fontStyle: FontStyle.italic,
                         ),
                       ),
@@ -231,26 +212,29 @@ class _PlantScreenState extends State<PlantScreen> {
                   children: [
                     Text(
                       'Filter',
-                      style: Theme
-                          .of(context)
-                          .textTheme
-                          .bodyMedium
-                          ?.copyWith(
+                      style: Theme.of(context).textTheme.bodyMedium?.copyWith(
                         color: AppTheme.textSecondary,
                       ),
                     ),
                     const SizedBox(width: 8),
-                    Container(
-                      width: 30,
-                      height: 30,
-                      decoration: BoxDecoration(
-                        color: AppTheme.badgeBackground,
-                        borderRadius: BorderRadius.circular(15),
-                      ),
-                      child: const Icon(
-                        Icons.filter_list,
-                        size: 15,
-                        color: AppTheme.textSecondary,
+                    GestureDetector(
+                      onTap: () => _showFilterDialog(plantProvider),
+                      child: Container(
+                        width: 30,
+                        height: 30,
+                        decoration: BoxDecoration(
+                          color: _selectedFilter != 'all'
+                              ? AppTheme.primaryYellow.withOpacity(0.3)
+                              : AppTheme.badgeBackground,
+                          borderRadius: BorderRadius.circular(15),
+                        ),
+                        child: Icon(
+                          Icons.filter_list,
+                          size: 15,
+                          color: _selectedFilter != 'all'
+                              ? AppTheme.primaryYellow
+                              : AppTheme.textSecondary,
+                        ),
                       ),
                     ),
                   ],
@@ -261,15 +245,15 @@ class _PlantScreenState extends State<PlantScreen> {
           const SizedBox(height: 20),
           // Content area
           Expanded(
-            child: _buildContent(),
+            child: _buildContent(plantProvider),
           ),
         ],
       ),
     );
   }
 
-  Widget _buildContent() {
-    if (isLoading) {
+  Widget _buildContent(PlantAnalysisProvider plantProvider) {
+    if (plantProvider.isLoading) {
       return const Center(
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,
@@ -290,7 +274,7 @@ class _PlantScreenState extends State<PlantScreen> {
       );
     }
 
-    if (hasError) {
+    if (plantProvider.error != null) {
       return Center(
         child: Padding(
           padding: const EdgeInsets.all(20),
@@ -313,7 +297,7 @@ class _PlantScreenState extends State<PlantScreen> {
               ),
               const SizedBox(height: 8),
               Text(
-                errorMessage,
+                plantProvider.error!,
                 textAlign: TextAlign.center,
                 style: const TextStyle(
                   color: AppTheme.textSecondary,
@@ -322,7 +306,10 @@ class _PlantScreenState extends State<PlantScreen> {
               ),
               const SizedBox(height: 16),
               ElevatedButton(
-                onPressed: _refreshData,
+                onPressed: () {
+                  plantProvider.clearError();
+                  _refreshData();
+                },
                 style: ElevatedButton.styleFrom(
                   backgroundColor: AppTheme.primaryYellow,
                   foregroundColor: AppTheme.textPrimary,
@@ -335,7 +322,10 @@ class _PlantScreenState extends State<PlantScreen> {
       );
     }
 
-    if (plantDataList.isEmpty) {
+    // Get filtered data
+    final filteredData = _getFilteredPlantData(plantProvider);
+
+    if (filteredData.isEmpty) {
       return Center(
         child: Padding(
           padding: const EdgeInsets.all(20),
@@ -343,42 +333,39 @@ class _PlantScreenState extends State<PlantScreen> {
             mainAxisAlignment: MainAxisAlignment.center,
             children: [
               Icon(
-                Icons.eco,
+                _searchQuery.isEmpty && _selectedFilter == 'all'
+                    ? Icons.eco
+                    : Icons.search_off,
                 size: 64,
                 color: AppTheme.textSecondary.withOpacity(0.5),
               ),
               const SizedBox(height: 16),
-              const Text(
-                'Aucune plante analysée',
-                style: TextStyle(
+              Text(
+                _getEmptyStateTitle(),
+                style: const TextStyle(
                   fontSize: 18,
                   fontWeight: FontWeight.w600,
                   color: AppTheme.textSecondary,
                 ),
               ),
               const SizedBox(height: 8),
-              const Text(
-                'Utilisez l\'appareil photo pour analyser vos plantes et détecter les maladies.',
+              Text(
+                _getEmptyStateSubtitle(),
                 textAlign: TextAlign.center,
-                style: TextStyle(
+                style: const TextStyle(
                   color: AppTheme.textSecondary,
                   fontSize: 14,
                 ),
               ),
               const SizedBox(height: 16),
               ElevatedButton.icon(
-                onPressed: () {
-                  // Scroll back to camera card or trigger camera
-                  setState(() {
-                    // Refresh to show any new analyses
-                  });
-                },
+                onPressed: _getEmptyStateAction(),
                 style: ElevatedButton.styleFrom(
                   backgroundColor: AppTheme.primaryGreen,
                   foregroundColor: Colors.white,
                 ),
-                icon: const Icon(Icons.camera_alt),
-                label: const Text('Analyser une plante'),
+                icon: Icon(_getEmptyStateIcon()),
+                label: Text(_getEmptyStateButtonText()),
               ),
             ],
           ),
@@ -386,90 +373,155 @@ class _PlantScreenState extends State<PlantScreen> {
       );
     }
 
-    // Display plant cards with section headers
-    return ListView.builder(
+    // Display plant cards
+    return ListView.separated(
       padding: const EdgeInsets.fromLTRB(20, 0, 20, 20),
-      itemCount: _getTotalItemCount(),
+      itemCount: filteredData.length,
+      separatorBuilder: (context, index) => const SizedBox(height: 20),
       itemBuilder: (context, index) {
-        return _buildListItem(index);
+        return PlantAnalysisCard(plantData: filteredData[index]);
       },
     );
   }
 
-  int _getTotalItemCount() {
-    int count = plantDataList.length;
+  List<dynamic> _getFilteredPlantData(PlantAnalysisProvider plantProvider) {
+    // Combine analysis history and all plants
+    List<dynamic> combinedData = [];
 
-    // Add section headers
-    if (plantDataList.any((plant) => _isUserAnalysis(plant))) {
-      count += 1; // Header for "Mes analyses"
-    }
-    if (plantDataList.any((plant) => !_isUserAnalysis(plant))) {
-      count += 1; // Header for "Base de données"
+    // Add analysis history (convert to PlantData for compatibility)
+    final analysisHistory = plantProvider.analysisHistory.map((analysis) {
+      return PlantData(
+        analysis.imagePath,
+        analysis.species,
+        analysis.isHealthy ? "Healthy" : "Diseased",
+        analysis.disease,
+        'Analyse du ${analysis.analyzedAt.day}/${analysis.analyzedAt.month}/${analysis.analyzedAt.year}',
+        analysis.recommendations.join('\n• '),
+      );
+    }).toList();
+
+    combinedData.addAll(analysisHistory);
+    combinedData.addAll(plantProvider.allPlants);
+
+    // Apply filters
+    if (_selectedFilter == 'healthy') {
+      combinedData = combinedData.where((item) {
+        if (item is PlantData) {
+          return item.healthStatus.toLowerCase() == 'healthy';
+        }
+        return false;
+      }).toList();
+    } else if (_selectedFilter == 'diseased') {
+      combinedData = combinedData.where((item) {
+        if (item is PlantData) {
+          return item.healthStatus.toLowerCase() != 'healthy';
+        }
+        return false;
+      }).toList();
     }
 
-    return count;
+    // Apply search filter
+    if (_searchQuery.isNotEmpty) {
+      combinedData = combinedData.where((item) {
+        if (item is PlantData) {
+          return item.plantName.toLowerCase().contains(_searchQuery.toLowerCase()) ||
+              item.diseaseName.toLowerCase().contains(_searchQuery.toLowerCase());
+        }
+        return false;
+      }).toList();
+    }
+
+    return combinedData;
   }
 
-  Widget _buildListItem(int index) {
-    int currentIndex = 0;
-
-    // Check if we need "Mes analyses" header
-    bool hasUserAnalyses = plantDataList.any((plant) => _isUserAnalysis(plant));
-
-    // Count user analyses
-    int userAnalysesCount = plantDataList
-        .where((plant) => _isUserAnalysis(plant))
-        .length;
-
-    // Show user analyses
-    if (index < currentIndex + userAnalysesCount) {
-      final userAnalyses = plantDataList.where((plant) =>
-          _isUserAnalysis(plant)).toList();
-      final plantIndex = index - currentIndex;
-      return Column(
-        children: [
-          PlantAnalysisCard(plantData: userAnalyses[plantIndex]),
-          if (plantIndex < userAnalyses.length - 1) const SizedBox(height: 20),
-        ],
-      );
-    }
-    currentIndex += userAnalysesCount;
-
-    // Check if we need "Base de données" header
-    bool hasDbPlants = plantDataList.any((plant) => !_isUserAnalysis(plant));
-    if (hasDbPlants && index == currentIndex) {
-      currentIndex++;
-      return Column(
-        children: [
-          const SizedBox(height: 20),
-        ],
-      );
-    }
-
-    // Show database plants
-    final dbPlants = plantDataList
-        .where((plant) => !_isUserAnalysis(plant))
-        .toList();
-    final dbIndex = index - currentIndex;
-
-    if (dbIndex < dbPlants.length) {
-      return Column(
-        children: [
-          PlantAnalysisCard(plantData: dbPlants[dbIndex]),
-          if (dbIndex < dbPlants.length - 1) const SizedBox(height: 20),
-        ],
-      );
-    }
-
-    return const SizedBox.shrink();
+  String _getEmptyStateTitle() {
+    if (_searchQuery.isNotEmpty) return 'Aucun résultat trouvé';
+    if (_selectedFilter == 'healthy') return 'Aucune plante saine';
+    if (_selectedFilter == 'diseased') return 'Aucune plante malade';
+    return 'Aucune plante analysée';
   }
 
-  bool _isUserAnalysis(PlantData plant) {
-    // Check if this is a user's analysis vs database plant
-    // User analyses typically have image paths that include timestamps or are local paths
-    return plant.plantImage.contains('/') &&
-        (plant.plantImage.contains('plant_sample_') ||
-            plant.plantImage.contains('/mock/') ||
-            plant.plantImage.startsWith('/'));
+  String _getEmptyStateSubtitle() {
+    if (_searchQuery.isNotEmpty) return 'Essayez avec d\'autres mots-clés.';
+    if (_selectedFilter != 'all') return 'Changez le filtre pour voir plus de résultats.';
+    return 'Utilisez l\'appareil photo pour analyser vos plantes et détecter les maladies.';
+  }
+
+  IconData _getEmptyStateIcon() {
+    if (_searchQuery.isNotEmpty || _selectedFilter != 'all') return Icons.clear;
+    return Icons.camera_alt;
+  }
+
+  String _getEmptyStateButtonText() {
+    if (_searchQuery.isNotEmpty) return 'Effacer recherche';
+    if (_selectedFilter != 'all') return 'Effacer filtre';
+    return 'Analyser une plante';
+  }
+
+  VoidCallback _getEmptyStateAction() {
+    return () {
+      if (_searchQuery.isNotEmpty) {
+        setState(() {
+          _searchQuery = '';
+        });
+      } else if (_selectedFilter != 'all') {
+        setState(() {
+          _selectedFilter = 'all';
+        });
+      } else {
+        // Trigger camera - scroll to top to show camera card
+        Scrollable.ensureVisible(
+          context,
+          duration: const Duration(milliseconds: 300),
+        );
+      }
+    };
+  }
+
+  void _showFilterDialog(PlantAnalysisProvider plantProvider) {
+    showDialog(
+      context: context,
+      builder: (BuildContext context) {
+        return AlertDialog(
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(20),
+          ),
+          title: const Text('Filtrer les analyses'),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              _buildFilterOption('all', 'Toutes les plantes', Icons.eco),
+              _buildFilterOption('healthy', 'Plantes saines', Icons.check_circle, Colors.green),
+              _buildFilterOption('diseased', 'Plantes malades', Icons.warning, Colors.red),
+            ],
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(context).pop(),
+              child: const Text(
+                'Fermer',
+                style: TextStyle(color: AppTheme.primaryYellow),
+              ),
+            ),
+          ],
+        );
+      },
+    );
+  }
+
+  Widget _buildFilterOption(String value, String title, IconData icon, [Color? color]) {
+    return ListTile(
+      leading: Icon(icon, color: color ?? AppTheme.textSecondary),
+      title: Text(title),
+      trailing: _selectedFilter == value
+          ? const Icon(Icons.check, color: AppTheme.primaryGreen)
+          : null,
+      onTap: () {
+        setState(() {
+          _selectedFilter = value;
+        });
+        Navigator.of(context).pop();
+      },
+    );
   }
 }

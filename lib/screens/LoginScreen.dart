@@ -1,6 +1,9 @@
+// lib/screens/LoginScreen.dart
 import 'package:flutter/material.dart';
-import '../services/main_backend_service.dart';
+import 'package:provider/provider.dart';
 import '../theme/app_theme.dart';
+import '../view_models/AppProvider.dart';
+import '../view_models/AuthProvider.dart';
 import 'RegisterScreen.dart';
 import 'main_screen.dart';
 
@@ -15,7 +18,6 @@ class _LoginScreenState extends State<LoginScreen> {
   final _formKey = GlobalKey<FormState>();
   final _emailController = TextEditingController();
   final _passwordController = TextEditingController();
-  bool _isLoading = false;
   bool _isPasswordVisible = false;
 
   @override
@@ -28,47 +30,34 @@ class _LoginScreenState extends State<LoginScreen> {
   Future<void> _login() async {
     if (!_formKey.currentState!.validate()) return;
 
-    setState(() {
-      _isLoading = true;
-    });
+    final authProvider = Provider.of<AuthProvider>(context, listen: false);
 
-    try {
-      final result = await MainBackendService.login(
-        _emailController.text.trim(),
-        _passwordController.text,
-      );
+    final success = await authProvider.login(
+      _emailController.text.trim(),
+      _passwordController.text,
+    );
 
-      if (mounted) {
-        setState(() {
-          _isLoading = false;
-        });
+    if (mounted) {
+      if (success) {
+        // Login successful - navigation will be handled by the AppInitializer
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Bienvenue ${authProvider.user?['first_name']} !'),
+            backgroundColor: Colors.green,
+          ),
+        );
 
-        if (result['success'] == true) {
-          // Login successful
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(
-              content: Text('Bienvenue ${result['user']['first_name']} !'),
-              backgroundColor: Colors.green,
-            ),
-          );
-
-          // Navigate to main screen
-          Navigator.pushReplacement(
-            context,
-            MaterialPageRoute(
-              builder: (context) => const MainScreen(),
-            ),
-          );
-        } else {
-          // Login failed
-          _showErrorDialog(result['error'] ?? 'Erreur de connexion');
-        }
+        // Navigate to main screen
+        Navigator.pushReplacement(
+          context,
+          MaterialPageRoute(
+            builder: (context) => const MainScreen(),
+          ),
+        );
+      } else {
+        // Login failed - error is handled by the provider
+        _showErrorDialog(authProvider.error ?? 'Erreur de connexion');
       }
-    } catch (e) {
-      setState(() {
-        _isLoading = false;
-      });
-      _showErrorDialog('Erreur réseau: $e');
     }
   }
 
@@ -90,7 +79,11 @@ class _LoginScreenState extends State<LoginScreen> {
           content: Text(message),
           actions: [
             TextButton(
-              onPressed: () => Navigator.of(context).pop(),
+              onPressed: () {
+                Navigator.of(context).pop();
+                // Clear error from provider
+                Provider.of<AuthProvider>(context, listen: false).clearError();
+              },
               child: const Text(
                 'OK',
                 style: TextStyle(
@@ -150,15 +143,15 @@ class _LoginScreenState extends State<LoginScreen> {
                 Text(
                   'GlovIris',
                   style: Theme.of(context).textTheme.headlineMedium?.copyWith(
-                        fontWeight: FontWeight.bold,
-                        color: AppTheme.textPrimary,
-                      ),
+                    fontWeight: FontWeight.bold,
+                    color: AppTheme.textPrimary,
+                  ),
                 ),
                 Text(
                   'Agriculture intelligente',
                   style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                        color: AppTheme.textSecondary,
-                      ),
+                    color: AppTheme.textSecondary,
+                  ),
                 ),
               ],
             ),
@@ -168,17 +161,17 @@ class _LoginScreenState extends State<LoginScreen> {
         Text(
           'Connectez-vous',
           style: Theme.of(context).textTheme.headlineSmall?.copyWith(
-                fontWeight: FontWeight.w600,
-                color: AppTheme.textPrimary,
-              ),
+            fontWeight: FontWeight.w600,
+            color: AppTheme.textPrimary,
+          ),
         ),
         const SizedBox(height: 8),
         Text(
           'Accédez à votre compte pour sauvegarder vos analyses et obtenir des recommandations personnalisées.',
           style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                color: AppTheme.textSecondary,
-                height: 1.4,
-              ),
+            color: AppTheme.textSecondary,
+            height: 1.4,
+          ),
         ),
       ],
     );
@@ -228,7 +221,7 @@ class _LoginScreenState extends State<LoginScreen> {
             ),
           ),
           const SizedBox(height: 20),
-          
+
           // Password field
           Container(
             decoration: BoxDecoration(
@@ -284,37 +277,41 @@ class _LoginScreenState extends State<LoginScreen> {
   }
 
   Widget _buildLoginButton() {
-    return SizedBox(
-      width: double.infinity,
-      height: 60,
-      child: ElevatedButton(
-        onPressed: _isLoading ? null : _login,
-        style: ElevatedButton.styleFrom(
-          backgroundColor: AppTheme.primaryYellow,
-          foregroundColor: AppTheme.textPrimary,
-          disabledBackgroundColor: AppTheme.primaryYellow.withOpacity(0.5),
-          shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(30),
-          ),
-          elevation: 0,
-        ),
-        child: _isLoading
-            ? const SizedBox(
-                width: 24,
-                height: 24,
-                child: CircularProgressIndicator(
-                  strokeWidth: 2,
-                  valueColor: AlwaysStoppedAnimation<Color>(AppTheme.textPrimary),
-                ),
-              )
-            : const Text(
-                'Se connecter',
-                style: TextStyle(
-                  fontSize: 18,
-                  fontWeight: FontWeight.w600,
-                ),
+    return Consumer<AuthProvider>(
+      builder: (context, authProvider, child) {
+        return SizedBox(
+          width: double.infinity,
+          height: 60,
+          child: ElevatedButton(
+            onPressed: authProvider.isLoading ? null : _login,
+            style: ElevatedButton.styleFrom(
+              backgroundColor: AppTheme.primaryYellow,
+              foregroundColor: AppTheme.textPrimary,
+              disabledBackgroundColor: AppTheme.primaryYellow.withOpacity(0.5),
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(30),
               ),
-      ),
+              elevation: 0,
+            ),
+            child: authProvider.isLoading
+                ? const SizedBox(
+              width: 24,
+              height: 24,
+              child: CircularProgressIndicator(
+                strokeWidth: 2,
+                valueColor: AlwaysStoppedAnimation<Color>(AppTheme.textPrimary),
+              ),
+            )
+                : const Text(
+              'Se connecter',
+              style: TextStyle(
+                fontSize: 18,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+          ),
+        );
+      },
     );
   }
 
@@ -397,6 +394,9 @@ class _LoginScreenState extends State<LoginScreen> {
             width: double.infinity,
             child: OutlinedButton(
               onPressed: () {
+                // Set offline mode in app provider
+                Provider.of<AppProvider>(context, listen: false).setOfflineMode(true);
+
                 Navigator.pushReplacement(
                   context,
                   MaterialPageRoute(
